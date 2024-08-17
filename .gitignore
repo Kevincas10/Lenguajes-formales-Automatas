@@ -1,0 +1,17 @@
+# Ignorar archivos ejecutables
+*.exe
+*.dll
+*.bin
+*.dat
+
+# Ignorar archivos compilados
+*.o
+*.obj
+*.class
+
+# Ignorar directorios binarios comunes
+/bin/
+/out/
+/build/
+/dist/
+/.idea/
