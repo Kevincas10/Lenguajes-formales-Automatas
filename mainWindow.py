@@ -8,7 +8,7 @@ from PyQt6.QtGui import QPixmap, QFont, QIcon
 
 # Lista de palabras clave, operadores y símbolos
 keywords = ["entero", "decimal", "booleano", "cadena", "si", "sino", "mientras", "hacer", "verdadero", "falso", "if",
-            "else", "while", "int", "print", "main", "return"]
+            "else", "elif", "while", "int", "print", "main", "return"]
 operators = ["+", "-", "*", "/", "%", "=", "==", "<", ">", ">=", "<=", "&&", "||", "!="]
 symbols = ["(", ")", "{", "}", ";"]
 
@@ -21,6 +21,7 @@ string_regex = r'^".*"$'  # Coincide con cadenas de texto entre comillas dobles
 # Diccionarios para almacenar la tabla de símbolos y la frecuencia de tokens
 symbol_table = {}
 token_count = defaultdict(lambda: {"tipo": "", "cantidad": 0})
+variable_types = {}  # Almacena los tipos de las variables
 
 def analyze_line(line, line_number):
     global symbol_table
@@ -37,6 +38,7 @@ def analyze_line(line, line_number):
             # Si el siguiente token es un identificador, agrégalo a la tabla de símbolos
             if token in ["int", "decimal", "booleano", "cadena"] and i + 1 < len(tokens):
                 symbol_table[tokens[i + 1]] = "variable"
+                variable_types[tokens[i + 1]] = token  # Almacena el tipo de la variable
         elif token in operators:
             resultado.append(f"Token encontrado: {token} - Operador")
             token_count[token]["tipo"] = "Operador"
@@ -68,42 +70,60 @@ def analyze_line(line, line_number):
 
 def analyze_semantics(tokens):
     errors = []
-    for token in tokens:
-        if re.match(identifier_regex, token) and token not in keywords and token not in symbol_table:
-            errors.append(f"Error semántico: '{token}' no declarado")
-    # Si no hay errores, agrega el mensaje final
+    last_variable = None
+
+    for i, token in enumerate(tokens):
+        if token in ["int", "decimal", "cadena"]:
+            last_variable = token
+        elif re.match(identifier_regex, token) and token not in keywords:
+            # Verificar si el token es una declaración de variable
+            if last_variable:
+                variable_types[token] = last_variable  # Guarda el tipo de la variable
+                last_variable = None
+            elif token not in variable_types:
+                errors.append(f"Error semántico: '{token}' no declarado")
+        elif token in operators:
+            # Verifica si los operadores están siendo usados entre tipos compatibles
+            if token == "+" and (
+                variable_types.get(tokens[i - 1]) == "cadena" or variable_types.get(tokens[i + 1]) == "cadena"
+            ):
+                errors.append(f"Error semántico: no se puede sumar 'cadena' con 'int' o 'decimal'")
     return errors if errors else ["Análisis semántico completado sin errores"]
 
 def parse_tokens(tokens):
     stack = []
-    last_if_index = -1  # Índice para almacenar la posición del último 'if'
+    last_if_index = -1
+    expect_semicolon = False
 
     for i, token in enumerate(tokens):
         if token == "if":
             stack.append("if")
             last_if_index = i
         elif token == "else":
-            # Solo permite 'else' si el último 'if' está en la pila
             if stack and stack[-1] == "if" and last_if_index < i:
-                stack.pop()  # Empareja el 'else' con el 'if' correspondiente
+                stack.pop()
             else:
                 return "Error sintáctico: 'else' sin 'if'"
         elif token == "{":
             stack.append("{")
         elif token == "}":
-            # Asegura que haya un bloque o apertura de llave que cerrar
             if "{" in stack:
                 while stack and stack[-1] != "{":
                     stack.pop()
-                stack.pop()  # Elimina la llave de apertura
+                stack.pop()
             else:
                 return "Error sintáctico: Llave de cierre sin apertura"
+        elif token == "print":
+            expect_semicolon = True
+        elif token == ";" and expect_semicolon:
+            expect_semicolon = False
+        elif expect_semicolon and (token != ";" and token not in symbols):
+            return "Error sintáctico: falta ';' después de 'print()'"
 
-    # Validar si todos los bloques y llaves fueron cerrados
     if stack:
         return "Error sintáctico: estructura incompleta (llave o bloque no cerrado)"
-
     return "Sintaxis válida"
+
 
 def analyze_content(content):
     lex_result, tokens = [], []
