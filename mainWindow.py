@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLa
 from PyQt6.QtGui import QPixmap, QFont, QIcon
 
 keywords = ["entero", "decimal", "booleano", "cadena", "si", "sino", "mientras", "hacer", "verdadero", "falso", "if",
-            "else", "while", "int", "print", "main"]
+            "else", "while", "int", "print", "main", "return"]
 operators = ["+", "-", "*", "/", "%", "=", "==", "<", ">", ">=", "<=", "&&", "||", "!="]
 symbols = ["(", ")", "{", "}", ";"]
 
@@ -20,16 +20,18 @@ symbol_table = {}
 
 
 def analyze_line(line, line_number):
+    global symbol_table  # Asegúrate de usar una tabla de símbolos global o del ámbito de la función principal
     line = re.sub(r'//.*', '', line)  # Elimina comentarios de línea única
     line = re.sub(r'/\*.*?\*/', '', line)  # Elimina comentarios de bloque
     tokens = re.findall(r'\".*?\"|\d+\.\d+|\w+|<=|>=|==|&&|\|\||!=|[-+*/%=<>();{}]|[^\w\s]', line)
 
     resultado = []
-    for token in tokens:
+    for i, token in enumerate(tokens):
         if token in keywords:
             resultado.append(f"Token encontrado: {token} - Palabra Reservada")
-            if token not in ["if", "else", "while", "print", "main"]:
-                symbol_table[token] = "keyword"  # Agrega palabras clave a la tabla de símbolos
+            # Si el siguiente token es un identificador, agrégalo a la tabla de símbolos
+            if token in ["int", "decimal", "booleano", "cadena"] and i + 1 < len(tokens):
+                symbol_table[tokens[i + 1]] = "variable"  # Registra el identificador como declarado
         elif token in operators:
             resultado.append(f"Token encontrado: {token} - Operador")
         elif token in symbols:
@@ -42,12 +44,20 @@ def analyze_line(line, line_number):
             resultado.append(f"Token encontrado: {token} - Cadena de texto")
         elif re.match(identifier_regex, token):
             resultado.append(f"Token encontrado: {token} - Identificador")
-            if token not in symbol_table:
-                symbol_table[token] = "variable"  # Marca como identificador si no está registrado
+            # Aquí no se agrega automáticamente a symbol_table; solo se agrega si es declarado
         else:
             resultado.append(f"Error léxico en la línea {line_number}: Token no reconocido \"{token}\"")
 
     return resultado, tokens
+
+def analyze_semantics(tokens):
+    errors = []
+    for token in tokens:
+        if re.match(identifier_regex, token) and token not in keywords and token not in symbol_table:
+            errors.append(f"Error semántico: '{token}' no declarado")
+    # Si no hay errores, agrega el mensaje final
+    return errors if errors else ["Análisis semántico completado sin errores"]
+
 
 
 def parse_tokens(tokens):
@@ -80,15 +90,6 @@ def parse_tokens(tokens):
         return "Error sintáctico: estructura incompleta (llave o bloque no cerrado)"
 
     return "Sintaxis válida"
-
-
-def analyze_semantics(tokens):
-    errors = []
-    for token in tokens:
-        if re.match(identifier_regex, token) and token not in keywords and symbol_table.get(token) != "variable":
-            errors.append(f"Error semántico: '{token}' no declarado")
-    return errors or ["Análisis semántico completado sin errores"]
-
 
 def analyze_content(content):
     resultado = []
