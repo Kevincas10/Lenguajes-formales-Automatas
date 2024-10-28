@@ -4,22 +4,18 @@ from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileDialog, QTextEdit
 from PyQt6.QtGui import QPixmap, QFont, QIcon
 
-
 keywords = ["entero", "decimal", "booleano", "cadena", "si", "sino", "mientras", "hacer", "verdadero", "falso"]
 operators = ["+", "-", "*", "/", "%", "=", "==", "<", ">", ">=", "<="]
 symbols = ["(", ")", "{", "}", ";"]
 
 # Expresiones regulares para diferentes tokens
-decimal_regex = r'^\d+(\.\d+)?$'  # Coincide con números enteros y decimales
-identifier_regex = r'^[a-zA-Z_]\w*$'  # Coincide con identificadores
-string_regex = r'^".*"$'  # Coincide con cadenas de texto entre comillas dobles
+decimal_regex = r'^\d+\.\d+$'
+integer_regex = r'^\d+$'
+identifier_regex = r'^[a-zA-Z_]\w*$'
+string_regex = r'^".*"$'
 
-
-
-decimal_regex = r'^\d+\.\d+$'  # Coincide con números decimales
-integer_regex = r'^\d+$'  # Coincide con números enteros
-identifier_regex = r'^[a-zA-Z_]\w*$'  # Coincide con identificadores
-string_regex = r'^".*"$'  # Coincide con cadenas de texto entre comillas dobles
+# Diccionario para variables declaradas en el análisis semántico
+variables = {}
 
 
 def analyze_line(line, line_number):
@@ -46,22 +42,82 @@ def analyze_line(line, line_number):
         else:
             resultado.append(f"Error léxico en la línea {line_number}: Token no reconocido \"{token}\"")
 
-    return "\n".join(resultado)
+    return resultado
+
+
+def es_declaracion_variable(tokens, index):
+    # Verifica si la secuencia es del tipo "tipo identificador = valor;"
+    return (tokens[index] in ["entero", "decimal", "booleano", "cadena"] and
+            re.match(identifier_regex, tokens[index + 1]) and
+            tokens[index + 2] == "=" and
+            (re.match(integer_regex, tokens[index + 3]) or re.match(decimal_regex, tokens[index + 3])) and
+            tokens[index + 4] == ";")
+
+
+def parse_tokens(tokens):
+    resultado = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+
+        if es_declaracion_variable(tokens, index):
+            resultado.append("Declaración de variable válida.")
+            verificar_declaracion_variable(tokens[index], tokens[index + 1])  # Agregar variable a diccionario
+            index += 5
+        else:
+            resultado.append(f"Error de sintaxis en token: {token}")
+            index += 1
+
+    return resultado
+
+
+def verificar_declaracion_variable(tipo, nombre):
+    if nombre in variables:
+        return f"Error semántico: la variable '{nombre}' ya está declarada."
+    else:
+        variables[nombre] = tipo
+        return f"Variable '{nombre}' de tipo '{tipo}' declarada."
+
+
+def analyze_semantics(tokens):
+    resultado = []
+    for token in tokens:
+        if token in variables:
+            resultado.append(f"Variable {token} correctamente utilizada.")
+        elif re.match(identifier_regex, token) and token not in variables:
+            resultado.append(f"Error semántico: la variable '{token}' no ha sido declarada.")
+    return resultado
 
 
 def analyze_content(content):
-    resultado = []
-    lines = content.split('\n')
-    for line_number, line in enumerate(lines, start=1):
-        resultado.append(analyze_line(line.strip(), line_number))
+    resultado_lexico = []
+    resultado_sintactico = []
+    resultado_semantico = []
 
-    return "\n".join(resultado)
+    lines = content.split('\n')
+    tokens = []
+
+    # Análisis léxico
+    for line_number, line in enumerate(lines, start=1):
+        resultado_lexico.extend(analyze_line(line.strip(), line_number))
+        tokens += re.findall(r'\".*?\"|\d+\.\d+|\w+|<=|>=|==|[-+*/%=<>();{}]|[^\w\s]', line)
+
+    # Análisis sintáctico
+    resultado_sintactico = parse_tokens(tokens)
+
+    # Análisis semántico
+    resultado_semantico = analyze_semantics(tokens)
+
+    # Mostrar resultados
+    return "\n".join(resultado_lexico) + "\n\n" + "\n".join(resultado_sintactico) + "\n\n" + "\n".join(
+        resultado_semantico)
+
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Analizador Léxico")
+        self.setWindowTitle("Analizador Léxico y Sintáctico")
         self.setGeometry(480, 90, 570, 690)
 
         self.contenido_txt = None
@@ -82,7 +138,7 @@ class MainWindow(QWidget):
         logo_label.setPixmap(pixmap)
         logo_layout.addWidget(logo_label)
 
-        title_label = QLabel("Analizador Léxico")
+        title_label = QLabel("Analizador Léxico y Sintáctico")
         title_label.setFont(QFont("Arial", 18, QFont.Weight.Bold))
         logo_layout.addWidget(aux_label)
         logo_layout.addWidget(title_label)
@@ -97,16 +153,12 @@ class MainWindow(QWidget):
         self.contenitdo_text.setFont(QFont("Arial", 11))
         self.contenitdo_text.setReadOnly(True)
 
-
         # TextEdit para mostrar resultados del análisis
         resultado_label = QLabel("Resultado:")
         resultado_label.setFont(QFont("Arial", 10))
         self.resultado_text_edit = QTextEdit(self)
         self.resultado_text_edit.setFont(QFont("Arial", 11))
         self.resultado_text_edit.setReadOnly(True)
-
-
-
 
         # Asignar el layout al widget
         layout.addLayout(logo_layout)
@@ -126,8 +178,6 @@ class MainWindow(QWidget):
         button.setIcon(QIcon(image_button))
         button.setIconSize(QSize(65, 65))
         button.setGeometry(10, 150, 250, 150)
-
-        # Aplicar estilo para la sombra en hover
         button.setStyleSheet("""
             QPushButton:hover {
                 border: 10px  #5e5e5e;
@@ -136,12 +186,10 @@ class MainWindow(QWidget):
                 box-shadow: 5px 5px 5px gray;
             }
         """)
-
         return button
 
     def cargar_archivo_txt(self):
         archivo, _ = QFileDialog.getOpenFileName(self, "Seleccionar archivo", "", "Archivos de texto (*.txt)")
-
         if archivo:
             try:
                 with open(archivo, 'r', encoding='utf-8') as file:
